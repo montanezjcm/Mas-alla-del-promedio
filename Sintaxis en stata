@@ -1,0 +1,689 @@
+set more off
+graph set window fontface "Times New Roman"
+
+gl Y="Directorio que contiene las bases de Ensanut"
+gl X="Directorio donde se guardarán todos los archivos generados en esta sintaxis"
+
+use "$Y/hogar_ensanut2023_w_n.dta", clear
+merge 1:1 FOLIO_I using "$Y/ENSANUT2023_ICB.dta" 
+sum indice1
+gen nse = [(indice1-r(min))/(r(max)-r(min))] * (100-0) + 0
+sum nse,d
+drop _merge
+rename ponde_f ponde_hog
+
+rename sexo sexo_jefe
+rename edad edad_jefe
+merge 1:m FOLIO_I using "$Y/integrantes_ensanut2023_w_n.dta"
+keep if _merge==3
+drop _merge
+
+rename ponde_f ponde_int
+
+merge 1:1 FOLIO_I FOLIO_INT  using "$Y/adultos_ensanut2023_w_n.dta"
+keep if _merge==3
+drop _merge
+
+merge 1:1 FOLIO_I FOLIO_INT  using "$Y/tomas_de_sangre_w8.dta"
+*keep if _merge==3
+*drop _merge
+
+** DIAGNOSTICO PREVIO DE DIABETES ** 
+svyset upm [pweight=ponde_f], strata(est_sel ) vce(linearized) singleunit(certainty)     //  https://doi.org/10.21149/13774
+tab a0301, mis
+tab a0301, mis nol
+	recode a0301 (3=0), gen(diabetes)
+	tab a0301 diabetes, mis
+	tab a0301 diabetes, mis nol
+	tab a0301 diabetes [iw=ponde_f], cell mis
+	tab diabetes sexo [iw=ponde_f], col mis
+	label define si 0"No" 1"Si", modify
+	label value diabetes si
+	label var diabetes "¿Algún médico le ha dicho que tiene diabetes (o alta el azúcar en la sangre)"
+
+tab a0401
+tab a0401, nol
+recode a0401 (1=1)(2=.) (3=0), gen(hta)
+	
+tab san01, mis			// solo 1551 con medición de muestra de sangre venosa
+tab san01 _merge, mis	// 125 sin información en el cuestionario de adultos
+tab san04 san01 if _merge==3, mis	// 1+3+1+1+8+31+17=62 con menos de 8 horas de ayuno
+di "63 personas que tenían menos de ocho horas de ayuno=   " 1+4+1+1+8+31+17
+tab  san01 if _merge==3 & san04>=8, mis
+tab  san01 if _merge==3 & san04>=8
+tab  san01 a0808 if _merge==3 & san04>=8, mis	// 9 mujeres embarazadas
+tab  san01 a0301 if _merge==3 & san04>=8 & a0808!=1, mis	// 4 con DM gestacional
+
+tab  san01 a0301 if _merge==3 & san04>=8 & a0808!=1 & a0301!=2, mis	// 1351 con HB
+
+tab a0301 if 7<san04 & _merge==3 &  a0808!=1 &  a0301!=2, sum(GLU_SUERO) mis // 1359 con GLU_SUERO
+tab a0301  if 7<san04 & _merge==3 &  a0808!=1 &  a0301!=2  & GLU_SUERO!=.   // 1359 con GLU_SUERO
+tab a0301 [iw=ponde_st_2] if 7<san04 & _merge==3 &  a0808!=1 &  a0301!=2  & GLU_SUERO!=. 
+tab a0301 [iw=ponde_suero_2] if 7<san04 & _merge==3 &  a0808!=1 &  a0301!=2  & GLU_SUERO!=. 
+
+***************************************************************************************************
+*** Filtro: Nos quedamos solo con la muestra analitica: 1359 individuos con medición de glucosa ***
+***************************************************************************************************
+keep if 7<san04 & _merge==3 &  a0808!=1 &  a0301!=2  & GLU_SUERO!=.
+
+** Descriptivas **
+sum GLU_SUERO ,d
+scalar p25=r(p25)
+scalar p50=r(p50)
+scalar p75=r(p75)
+******************
+**** Cuadro 1 ****
+******************
+tabstat GLU_SUERO, stats(n mean sd p10 p25 p50 p75, p90 sk ) by(diabetes)
+
+
+
+set more off
+*********************************************************** 
+************ Figura 1: Histograma, y Grafica de Caja y Bigote ***********
+***********************************************************
+bysort diabetes: sum GLU_SUERO ,d
+histogram GLU_SUERO, fcolor(blue) normal  normopts(lcolor(red) lp(-)) title("a) Histograma", position(11) size(*1.1)) bin(50) scheme(white) ///
+	freq ytitle(Frecuencia) ylabel(,nogrid) xlabel(0"0" 100"100" 200"200" 300"300" 400"400" 500"500" 600 "600",nogrid) name(F1a, replace)
+
+graph export "$X/Figura 1a.eps", replace
+graph export "$X/Figura 1a.png", replace
+
+stem GLU_SUERO,prune
+swilk  GLU_SUERO
+label var diabetes "¿Algún médico le ha dicho que tiene diabetes (o alta el azúcar en la sangre)"
+graph hbox GLU_SUERO, over(diabetes) scheme(white) box(1, color(blue))  title("b) Caja y bigote", position(11) size(*1.1)) yline(173.9, lp(-) lcolor(red)) yline(95.4, lp(-) lcolor(blue)) ///
+	medtype(cline) marker(1, mcolor(blue) msize(tiny) msymbol(circle)) medline(lcolor(white) lpattern(dash)) ylabel(,nogrid)  ///
+	ylabel(0 "0" 95.4"Media 95.4" 173.9"Media 173.9" 300"300" 400 "400" 500"500" 550"550")  ytitle("Glucosa mg/dl") name(F1b, replace) ///
+	text(450 90 "n = 1144", color(blue) placement(e) size(small)) ///
+	text(400 85 "sin diagnóstico de diabetes ", color(blue) placement(e) size(small)) ///
+	text(450 40 "n =  215", color(red) placement(e) size(small) angle(vertical))  ///
+	text(400 35 "con diagnóstico de diabetes ", color(red) placement(e) size(small))
+	*text(-40 45 "Diagnóstico de diabetes", color(navy) placement(e) size(small) angle(vertical))
+
+graph export "$X/Figura 1b.eps", replace
+graph export "$X/Figura 1b.png", replace
+	
+graph combine F1a F1b , col(2) title(" ") xsize(10) ysize(5) note("Fuente: Ensanut continua 2023") /// 
+graphregion(margin(l=1 r=1) color(white)) //hole(3) imargin(none) 
+graph export "$X/Figura 1.png", replace
+graph export "$X/Figura 1.eps", replace
+
+
+	
+/***********************************************************
+** Figura 2. Comparación de las distribuciones de glucosa en 
+suero entre personas sin y con diagnóstico previo de diabetes. 
+México, ENSANUT 2023. **
+***********************************************************/
+** Figura 2a **
+kdensity GLU_SUERO if diabetes==0, scheme(white) color(blue) lp(-_-) note("") title("a) Gráfico de la función de densidad kernel", position(11) size(*1.1)) ytitle("Densidad") xtitle("Glucosa mg/dl") legend(off) ///
+	text(0.004 200 "----- Valores observados en personas con diabetes", color(red) placement(e) size(small)) ylab(,nogrid) xlab(,nogrid) ///
+	addplot(kdensity GLU_SUERO if diabetes==1, color(red) lp(-##-) text(0.03 120 "----- Valores observados en personas sin diabetes", color(blue) placement(e) size(small))) name(F2a,replace) 
+
+graph export "$X/Figura 2a.eps", replace
+graph export "$X/Figura 2a.png", replace
+
+kdensity GLU_SUERO if diabetes==0, gen(origin0 den0) nodraw
+*scatter  den0 origin0
+kdensity GLU_SUERO if diabetes==1, gen(origin1 den1) nodraw
+*scatter  den1 origin1
+sum den*
+gen GLU_SUERO0=GLU_SUERO 
+	replace GLU_SUERO0=. if origin0==0
+gen GLU_SUERO1=GLU_SUERO 
+	replace GLU_SUERO1=. if origin1==1
+qqplot den0 den1, scheme(white) name(F2b, replace)
+
+
+preserve
+keep FOLIO_I FOLIO_INT  GLU_SUERO diabetes
+drop if diabetes==. 
+reshape wide GLU_SUERO, i(FOLIO_I FOLIO_INT ) j(diabetes)
+qqplot GLU_SUERO1 GLU_SUERO0, scheme(white) xtitle("Con diagnóstico DM2") ytitle("Sin diagnóstico DM2") mcolor(blue) ///
+	title("b) Gráfica Cuantil - Cuantil", position(11) size(*1.1)) ylab(,nogrid) xlab(,nogrid) name(F2b,replace) 
+	graph export "$X/Figura 2b.eps", replace
+	graph export "$X/Figura 2b.png", replace
+restore
+
+graph combine F2a F2b , col(2) title("") xsize(10) ysize(5) ///
+	graphregion(margin(l=1 r=1) color(white)) note("Fuente: Ensanut continua 2023")	 
+graph export "$X/Figura 2.png", replace	
+graph export "$X/Figura 2.eps", replace
+
+***********************************************************
+** Figura 3: Distribucion acumulada y Funcion Cuantilica **
+***********************************************************
+sort GLU_SUERO
+cumul GLU_SUERO, gen(F)
+sort F
+scalar list
+line F GLU_SUERO, 
+* Figura 2a: Distribucion acumulada *
+two (line  F GLU_SUERO, legend(off) scheme(white)  ytitle("F{sub}y", size(medlarge)) xtitle("Glucosa mg/dl", size(medlarge)) ylabel(,nogrid) xlabel(,nogrid)	///
+	title("a) Función de Distribución Acumulada (FDA)", position(11) size(*1.1))) 			///   		   // title("") subtitle("Ensanut continua 2023") 
+	|| pci 0.75 0  0.75 106 , lp(-_-) lc(blue) 		   ///
+	|| pci 0 106 0.75 106  , lp(-_-) lc(blue) 		   ///
+	|| pci 0.5 0  0.5 93 , lp(-##-) lc(black)					   ///
+	|| pci 0 93 0.5 93  , lp(-##-) lc(black) 				   ///
+	|| pci 0.25 0  0.25 86 , lp(-) lc(red)		   ///
+	|| pci 0 86 0.25 86  , lp(-) lc(red)    ///
+	ylabel(0"0" 0.25 "0.25" 0.5 "0.5" 0.75"0.75" 0.10"0.10" 0.9"0.90" 1"1")	///
+	xlabel(0"0" 93 "93" 200 "200" 400"400" 600"600")	///
+	|| (pcarrowi 0.10 50 0 86 (12) "86", color(red) lp(-) mlabcol(red)) ///
+	|| (pcarrowi 0.10 200 0 106 (12) "106", color(blue) lp(-_-) mlabcol(blue)) 	///
+	|| function y=normal((x-107)/51), range(0 600) lp(-###-###-) color(gs10) ///
+	name(F3a,replace)
+
+graph export "$X/Figura 3a.eps", replace
+graph export "$X/Figura 3a.png", replace
+
+* Figura b: Funcion Cuantilica *
+two (line GLU_SUERO F, legend(off) scheme(white) ylab(, grid) ytitle("Q ({&Theta})", size(medlarge)) xtitle("{&Theta}", size(medlarge)) ylabel(,nogrid) xlabel(,nogrid)	///
+	title("b) Función Cuantílica Q({&Theta})", position(11) size(*1.1))) /// 		   // subtitle("Ensanut continua 2023") )  plotregion(style(none))
+	|| pci  0  0.75 106  0.75 , lp(-_-) lc(blue) ///
+	|| pci 106 0  106 0.75 , lp(-_-) lc(blue) ///
+	|| pci 0 0.5 93  0.5  , lp(-##-) lc(black)					   ///
+	|| pci 93 0 93 0.5   , lp(-##-) lc(black) 				   ///
+	|| pci 0 0.25 86 0.25 , lp(-) lc(red)		   ///
+	|| pci 86 0 86 0.25  , lp(-) lc(red)    ///
+	xlabel(0"0" 0.25 "{&Theta}=0.25" 0.5 "{&Theta}=0.50" 0.75"{&Theta}=0.75" 1"1")	///
+	ylabel(0"0" 93 "93" 200 "200" 400"400" 600"600" )	///
+	|| (pcarrowi 50  0.10 86  0 (12) "86" , color(red)    lp(-) mlabcol(red) )  ///
+	|| (pcarrowi 200 0.10 106 0 (12) "106", color(blue) lp(-_-) mlabcol(blue)	///
+	name(F3b,replace) ) 
+
+graph export "$X/Figura 3b.eps", replace
+graph export "$X/Figura 3b.png", replace
+
+* Figura 2: Función de distribución empirica *
+graph combine F3a F3b , col(2) title(" ") xsize(10) ysize(5) note("Fuente: Ensanut continua 2023") /// 
+graphregion(margin(l=1 r=1) color(white)) //hole(3) imargin(none) 
+	
+graph export "$X/Figura 3.eps", replace
+graph export "$X/Figura 3.png", replace
+
+**** Figura 4: Proceso de minimizacion **** ytitle("{c S|}{it: |y-{&minus}y| o (y-{&mu})^{sup}2}") 
+gen y=0
+gen x1=runiform()/2
+gen x2=runiform()/2*(-1)
+gen x=x1+x2
+twoway scatter y x, yaxis(1 2) scheme(white)  color(gs12) msize(vtiny)  recast(area) ///
+	ytitle("{it:min} { {&Theta} {&sum} | y - {&mu} | + (1-{&Theta}) {&sum} | y - {&mu} | }", axis(1) angle(horizontal) color(blue)) ylab(, nogrid) xlab(, nogrid) /// 
+	xtitle("{&Theta}", color(blue)) ytitle( "{it:min} {&sum} ( y - {&mu} ){sup}2", axis(2) angle(horizontal) color(red)) xlabel(-0.2 "{&Theta}=0.25" 0 "{&Theta}=0.5" 0.2 "{&Theta}=0.75") ///
+	text(0.3 0.7   "{&function}(y) = ( y - {&mu} ){sup}2", size(small) color(red)) ///
+	text(0.7 0.5   "{&function}(y) = | y - {&mu} |", size(small) color(navy)) ///
+	text(0.2 -0.75 "{&function}(y) = {&Theta} | y - {&mu} |", size(small) color(blue)) ///
+	text(0.4 0.1   "{&function}(y) = (1-{&Theta}) | y - {&mu} |", size(small) color(blue)) ///
+	|| function y=x^2,    range(-1 1) color(red) lp(#_#_#) || function y=abs(x), range(-1 1) color(navy) lp(-) 	///
+	|| function y=0.25*abs(x+0.2), range(-1 -0.2) lp(_) color(blue) || function y=0.75*abs(x+0.2), range(-0.2 1) lp(_) color(blue)		///
+	|| function y=0.75*abs(x-0.2), range(-1 0.2) lp(-) color(gs12) ||function y=0.25*abs(x-0.2), range(0.2 1) lp(-) color(gs12)	///
+	legend(order(2 "Función Cuadrática" 3 "Función 'V'  simétrica Q({&Theta}) = 0.50" 4 "Función 'V' asimétrica Q({&Theta}) = 0.25" ///
+	5 "Función 'V' asimétrica Q({&Theta}) = 0.75") position(0) col(1) bplace(n) region(lstyle(none)) ) ///
+	|| scatteri 0 -0.2 0 0.2 0 0, mcol(blue) msymbol(triangle) msize(small) name(F4, replace) ///
+	|| scatteri 0 0, mcol(red) msymbol(triangle) msize(small)
+
+
+graph export "$X/Figura 4.eps", replace
+graph export "$X/Figura 4.png", replace	
+
+
+
+
+******************
+**** Cuadro 2 ****
+******************
+set more off
+** Interpretacion con variable categorica **
+reg GLU_SUERO diabetes
+lincom diabetes+_cons
+*estimates store reg1
+qreg GLU_SUERO diabetes, q(0.50)
+lincom diabetes+_cons
+*estimates store sq1
+*estimates table reg1 sq1, varlabel b(%7.2f) se(%7.2f) p(%4.2f) //stats(N e(q) e(q_v))
+
+******************
+**** Cuadro 3 ****
+******************
+sqreg GLU_SUERO diabetes,  q(0.05 0.1 0.25 0.5 0.75 0.90 0.95)
+estimates store sq1
+estimates table sq1, varlabel b(%7.2f) se(%7.2f) p(%4.2f)
+lincom [q05]diabetes+[q05]_cons
+lincom [q10]diabetes+[q10]_cons
+
+**** Figura 5****
+set more off
+matrix drop _all
+forvalues i=0(1)9{
+	qui sqreg GLU_SUERO diabetes, q(0.`i'1 0.`i'3  0.`i'5  0.`i'7  0.`i'9)
+	matrix A`i'=e(b)
+}
+
+matrix AB=(A0\ A1\ A2\ A3\ A4\ A5\ A6\ A7\ A8\ A9)
+matrix list AB
+matrix AB11=AB[1...,1]
+matrix AB12=AB[1...,2]
+matrix AB13=AB[1...,3]
+matrix AB14=AB[1...,4]
+matrix AB15=AB[1...,5]
+matrix AB16=AB[1...,6]
+matrix AB17=AB[1...,7]
+matrix AB18=AB[1...,8]
+matrix AB19=AB[1...,9]
+matrix AB20=AB[1...,10]
+
+
+matrix m=(AB11\AB13\AB15\AB17\AB19) 
+matrix b=(AB12\AB14\AB16\AB18\AB20)
+matrix data = (b,m) 
+matrix list data
+svmat data
+gen bm=data1+data2	// Nivel estimado de glucosa en personas con diabetes
+kdensity GLU_SUERO if diabetes==0, scheme(white) color(blue) lp(-_-) note("") title("a) Valores observados de glucosa en suero", position(11) size(*1.1)) ytitle("Densidad") xtitle("Glucosa mg/dl") legend(off) ///
+	text(0.004 200 "----- Valores observados en personas con diabetes", color(red) placement(e) size(small)) ylab(,nogrid) xlab(,nogrid) ///
+	addplot(kdensity GLU_SUERO if diabetes==1, color(red) lp(-##-) text(0.03 120 "----- Valores observados en personas sin diabetes", color(blue) placement(e) size(small))) name(F5a,replace) 
+
+graph export "$X/Figura 5a.eps", replace
+graph export "$X/Figura 5a.png", replace	
+
+kdensity bm, scheme(white) color(red) lp(-_-) note("") title("b) Valores estimados de glucosa en suero", position(11) size(*1.1)) ytitle("") xtitle("Glucosa mg/dl")  legend(off) ///
+	text(0.004 200 "----- Valores estimados en personas con diabetes", color(red) placement(e) size(small)) ylabel(,nogrid) xlabel(,nogrid) ///
+	addplot(kdensity data1, color(blue) lp(-##-) text(0.03 120 "----- Valores estimados en personas sin diabetes", color(blue) placement(e) size(small))) name(F5b,replace) 
+graph export "$X/Figura 5b.eps", replace
+graph export "$X/Figura 5b.png", replace	
+/*histogram GLU_SUERO if diabetes==0,  scheme(white) fcolor(none) lcolor(blue) bin(100) title("a) Valores observados de glucosa en suero", position(11) size(*1.1)) ytitle("Densidad") xtitle("Glucosa mg/dl") legend(off) ///
+	text(0.04 200 "----- Valores observados en personas con diabetes", color(red) placement(e) size(small)) ylab(,nogrid) xlab(,nogrid) ///
+	addplot(histogram GLU_SUERO if diabetes==1, fcolor(none) lcolor(red) text(0.01 200 "----- Valores observados en personas sin diabetes", color(blue) placement(e) size(small))) name(F5a,replace) 
+*/
+	
+
+graph combine F5a F5b , col(2) title("") xsize(10) ysize(5) ycommon	///
+	graphregion(margin(l=1 r=1) color(white)) note("Fuente: Ensanut continua 2023")
+
+graph export "$X/Figura 5.eps", replace
+graph export "$X/Figura 5.png", replace	
+/*	
+set more off
+forvalues i=0(1)9{
+	forvalues j=1(1)9{
+	qui qreg GLU_SUERO diabetes, q(0.`i'`j')
+	matrix A`i'`j'=e(b)'
+}
+}
+forvalues i=0(1)9{
+matrix A`i'=(A`i'1\ A`i'2\ A`i'3\ A`i'4\ A`i'5\ A`i'6\ A`i'7\ A`i'8\ A`i'9)
+}
+matrix AA=(A1,A2,A3,A4,A5,A6,A7,A8,A9)
+matrix list AA
+svmat AA
+matrix AA1=(AA[1,1...],AA[3,1...],AA[5,1...],AA[7,1...],AA[9,1...],AA[11,1...],AA[13,1...],AA[15,1...],AA[17,1...])
+matrix AA2=(AA[2,1...],AA[4,1...],AA[6,1...],AA[8,1...],AA[10,1...],AA[12,1...],AA[14,1...],AA[16,1...],AA[18,1...])
+matrix list AA1
+matrix list AA2
+matrix AAA=AA1'
+matrix AAB=AA2'
+svmat AAA 
+svmat AAB
+gen mb=AAA+AAB
+kdensity mb , scheme(white) addplot(kdensity AAB) name(F6a,replace) legend(off) note("") title("")
+
+graph combine F4a F6a , col(2) title("Alternativas para comparar distribuciones") xsize(10) ysize(5) ///
+		graphregion(margin(l=1 r=1) color(white))
+*/
+
+******************
+**** Cuadro 4 ****
+******************
+** Interpretacion con variable continua **
+reg GLU_SUERO edad
+estimates store reg2
+qreg GLU_SUERO edad, q(0.50)
+estimates store sq2
+estimates table reg2 sq2, varlabel b(%7.2f) se(%7.2f) p(%4.2f) //stats(N e(q) e(q_v))
+
+reg GLU_SUERO edad if diabetes==0
+qreg GLU_SUERO edad if diabetes==0
+sum GLU_SUERO if diabetes==0,d
+sum GLU_SUERO if diabetes==1,d
+tab diabetes, sum(GLU_SUERO)
+
+******************
+**** Cuadro 5 ****
+******************
+sqreg GLU_SUERO edad,  q(0.01 0.05 0.1 0.25 0.5 0.75 0.90 0.95 0.99)
+
+******************
+**** Figura 6 ****
+******************
+*** Valores predichos ***
+set more off
+qreg GLU_SUERO edad 
+reg GLU_SUERO edad
+foreach i in 5 10 25 50 75 90 95 99{
+	if `i'==5{
+	    qreg GLU_SUERO edad, q(0.0`i')
+		predict q0`i'
+	}
+	else if `i'!=5{
+	qreg GLU_SUERO edad, q(0.`i')  
+	predict q`i' 
+	}
+}
+twoway scatter GLU_SUERO edad if diabetes==0, mcolor(blue) scheme(white)  msymbol(circle) msize(tiny) ytitle("Glucosa mg/dl") xtitle("Edad") || ///
+	   scatter GLU_SUERO edad if diabetes==1, msize(tiny) mcolor(red) msymbol(circle) ylabel(,nogrid) xlabel(20"20" 30"30" 40"40" 50"50" 60"60" 70"70" 80"80" 90"90"  100"100",nogrid) ||	///
+	(lfit GLU_SUERO edad, lp(-) lcolor(red) text(135 94 "Prediccion lineal", placement(e) size(vsmall))) ||    ///
+	(line q50 edad, lcolor(blue) text(105 94 "QR en {&Theta}=0.5", placement(e) size(vsmall)))    ||    ///
+	(function 20+normalden(x,100,51)*500, horizontal range(0 300) lp(_-_) lcolor(red) lwidth(vthin)) || ///
+	(function 30+normalden(x,104,51)*500, horizontal range(0 350) lp(_-_) lcolor(red) lwidth(vthin)) || ///
+	(function 40+normalden(x,108,51)*500, horizontal range(0 400) lp(_-_) lcolor(red) lwidth(vthin)) || ///
+	(function 50+normalden(x,112,51)*500, horizontal range(0 500) lp(_-_) lcolor(red) lwidth(vthin)) || ///
+	(function 60+normalden(x,116,51)*500, horizontal range(0 400) lp(_-_) lcolor(red) lwidth(vthin)) || ///
+	(function 70+normalden(x,120,51)*500, horizontal range(0 450) lp(_-_) lcolor(red) lwidth(vthin)) || ///
+	(function 80+normalden(x,124,51)*500, horizontal range(0 300) lp(_-_) lcolor(red) lwidth(vthin)), ///
+  legend(order(1 "Sin diagnóstico de diabetes" 2 "Con diagnóstico de diabetes" 3 "Prediccion lineal" 4 "QR en {&Theta}=0.5") ///
+  position(center) col(2) bplace(nw) region(lstyle(none)) size(small)  margin(zero)) name(F6, replace)
+
+graph export "$X/Figura 6.eps", replace
+graph export "$X/Figura 6.png", replace
+
+******************
+**** Figura 7 ****
+******************
+histogram GLU_SUERO, freq bin(50)
+forvalues i=20(5)80{
+	histogram GLU_SUERO if edad==`i', freq bin(50) name(h`i', replace)
+}
+kdensity GLU_SUERO if edad==20, gen(a20 b20)
+	replace b20=b20*300+20
+kdensity GLU_SUERO if edad==29, gen(a29 b29)
+	replace b29=b29*300+29
+kdensity GLU_SUERO if edad==33, gen(a33 b33)
+	replace b33=b33*300+33
+kdensity GLU_SUERO if edad==40, gen(a40 b40)
+	replace b40=b40*300+40
+kdensity GLU_SUERO if edad==50, gen(a50 b50)
+	replace b50=b50*300+50
+kdensity GLU_SUERO if edad==60, gen(a60 b60)
+	replace b60=b60*300+60
+kdensity GLU_SUERO if edad==61, gen(a61 b61)
+	replace b61=b61*300+61
+kdensity GLU_SUERO if edad==70, gen(a70 b70)
+	replace b70=b70*300+70
+kdensity GLU_SUERO if edad==80, gen(a80 b80)
+	replace b80=b80*300+80
+
+twoway scatter GLU_SUERO edad if diabetes==0, mcolor(blue) scheme(white)  msymbol(circle) msize(tiny) ytitle("Glucosa mg/dl") xtitle("Edad") || ///
+	    scatter GLU_SUERO edad if diabetes==1, msize(tiny) mcolor(red) msymbol(circle) ylabel(,nogrid) xlabel(20"20" 30"30" 40"40" 50"50" 60"60" 70"70" 80"80" 90"90" 100"100",nogrid) ||	///
+	(lfit GLU_SUERO edad, lp(-) lcolor(red) text(135 94 "", placement(e) size(vsmall))) || ///
+	|| line q50 edad, lcolor(blue) text(105 94 "QR en {&Theta}=0.5", placement(e) size(vsmall))  ///
+	|| line q90 edad, lcolor(green) text(220 94 "QR en {&Theta}=0.90", placement(e) size(vsmall)) ///
+    || line q95 edad, lcolor(orange) text(360 94 "QR en {&Theta}=0.95", placement(e) size(vsmall)) ///
+	|| line q99 edad, lcolor(purple) text(415 94 "QR en {&Theta}=0.99", placement(e) size(vsmall)) ///
+	legend(order(1 "Sin diagnóstico de diabetes" 2 "Con diagnóstico de diabetes" 3 "Prediccion lineal" 4 "QR en {&Theta}=0.5" 5 "QR en {&Theta}=0.9" 6 "QR en {&Theta}=0.95" 7 "QR en {&Theta}=0.99") ///
+    position(center) col(3)  row(2) bplace(nw) region(lstyle(none)) size(small)  margin(zero)) name(F6, replace) || ///
+	(line a20 b20, lp(-) lcolor(red) lwidth(vthin)) || (line a33 b33, lp(-) lcolor(red) lwidth(vthin)) || ///
+	(line a40 b40, lp(-) lcolor(red) lwidth(vthin)) || (line a50 b50, lp(-) lcolor(red) lwidth(vthin)) || ///
+	(line a61 b61, lp(-) lcolor(red) lwidth(vthin)) || (line a70 b70, lp(-) lcolor(red) lwidth(vthin)) || ///
+	(line a80 b80, lp(-) lcolor(red) lwidth(vthin))
+
+graph export "$X/Figura 7.eps", replace	 
+graph export "$X/Figura 7.png", replace
+
+
+******************
+**** Cuadro 7 ****
+******************
+sum GLU_SUERO,d
+return list
+bootstrap (IC95_BS: p25=r(p25) p50=r(p50) p75=r(p75) iqr=(r(p75)-r(p25))), nodots reps(50): sum GLU_SUERO,d 
+******************
+**** Cuadro 7 ****
+******************
+set more off
+bootstrap (pseudoR2: pseudoR2_05=(1-e(sumadv1)/e(sumrdv1)) ///
+			pseudoR2_10=(1-e(sumadv2)/e(sumrdv2)) ///
+			pseudoR2_25=(1-e(sumadv3)/e(sumrdv3)) ///
+			pseudoR2_50=(1-e(sumadv4)/e(sumrdv4)) ///
+			pseudoR2_75=(1-e(sumadv5)/e(sumrdv5)) ///
+			pseudoR2_90=(1-e(sumadv6)/e(sumrdv6)) ///
+			pseudoR2_95=(1-e(sumadv7)/e(sumrdv7))), nodots: ///
+			sqreg GLU_SUERO diabetes, q(0.05 0.10 0.25 0.50 0.75 0.90 0.95)
+		
+bootstrap (pseudoR2: pseudoR2_05=(1-e(sumadv1)/e(sumrdv1)) ///
+			pseudoR2_10=(1-e(sumadv2)/e(sumrdv2)) ///
+			pseudoR2_25=(1-e(sumadv3)/e(sumrdv3)) ///
+			pseudoR2_50=(1-e(sumadv4)/e(sumrdv4)) ///
+			pseudoR2_75=(1-e(sumadv5)/e(sumrdv5)) ///
+			pseudoR2_90=(1-e(sumadv6)/e(sumrdv6)) ///
+			pseudoR2_95=(1-e(sumadv7)/e(sumrdv7))), nodots: ///
+			sqreg GLU_SUERO edad, q(0.05 0.10 0.25 0.50 0.75 0.90 0.95)
+
+
+	
+******************		******************
+**** Cuadro 7 ****		**** Figura 7 ****
+******************		******************
+tab a0307, mis
+tab a0303, mis
+set more off
+set seed 123 
+recode sexo (1=0)(2=1)
+label var sexo "Sexo (mujer=1)"
+label var diabetes "Diagnostico de DM2=1"
+label var hta "Diagnostico de HTA=1"
+label var edad "Edad"
+label var indice1 "Indice de biesnestar"
+global vars sexo edad diabetes hta indice1
+	foreach i in $vars{
+		sum `i'
+		gen `i'_m=`i'-r(mean)
+	}
+label var sexo_m		"{&beta} ({bf:{it: SEXO (mujer=1)}})"
+label var diabetes_m 	"{&beta} ({bf:{it:DIAGNOSTICO DM2=1}})"
+label var hta_m 		"{&beta} ({bf:{it:DIAGNOSTICO HTA=1}})"
+label var edad_m 		"{&beta} ({bf:{it:EDAD}})"
+label var indice1_m 	"{&beta} ({bf:{it:INDICE DE BIENESTAR}})"
+
+collin sexo_m edad_m diabetes_m hta_m indice1_m	
+
+sqreg GLU_SUERO sexo_m edad_m diabetes_m hta_m indice1_m, q(0.05 0.10 0.25 0.50 0.75 0.90 0.95) reps(500)
+grqreg , cons ci ols olsci format(%3.1fc) name(F8, replace)	scheme(white)  //[pw=ponde_suero_2]
+
+graph export "$X/Figura 8.png", replace
+graph export "$X/Figura 8.eps", replace
+
+qreg GLU_SUERO  edad_m diabetes_m, q(0.50)
+grqreg edad_m diabetes_m, compare xlabel(, nogrid) ylabel(, nogrid) name(F9, replace) scheme(white) 
+
+graph export "$X/Figura 9.eps", replace
+graph export "$X/Figura 9.png", replace
+
+sqreg GLU_SUERO sexo_m edad_m diabetes_m hta_m indice1_m, q(0.05 0.10 0.25 0.50 0.75 0.90 0.95)
+	scalar pseudoR2_05=1-e(sumadv1)/e(sumrdv1)
+	scalar pseudoR2_10=1-e(sumadv2)/e(sumrdv2)
+	scalar pseudoR2_25=1-e(sumadv3)/e(sumrdv3)
+	scalar pseudoR2_50=1-e(sumadv4)/e(sumrdv4)
+	scalar pseudoR2_75=1-e(sumadv5)/e(sumrdv5)
+	scalar pseudoR2_90=1-e(sumadv6)/e(sumrdv6)
+	scalar pseudoR2_95=1-e(sumadv7)/e(sumrdv7)
+	matrix pseudoR2=(pseudoR2_05,pseudoR2_10,pseudoR2_25,pseudoR2_50,pseudoR2_75,pseudoR2_90, pseudoR2_95)
+bootstrap (pseudoR2: pseudoR2_05=(1-e(sumadv1)/e(sumrdv1)) ///
+			pseudoR2_10=(1-e(sumadv2)/e(sumrdv2)) ///
+			pseudoR2_25=(1-e(sumadv3)/e(sumrdv3)) ///
+			pseudoR2_50=(1-e(sumadv4)/e(sumrdv4)) ///
+			pseudoR2_75=(1-e(sumadv5)/e(sumrdv5)) ///
+			pseudoR2_90=(1-e(sumadv6)/e(sumrdv6)) ///
+			pseudoR2_95=(1-e(sumadv7)/e(sumrdv7))), nodots: ///
+			sqreg GLU_SUERO sexo_m edad_m diabetes_m hta_m indice1_m, q(0.05 0.10 0.25 0.50 0.75 0.90 0.95) reps(500)
+
+reg GLU_SUERO sexo_m edad_m diabetes_m hta_m indice1_m	
+	lincom  _cons + diabetes_m 
+bootstrap R2=e(r2), nodots : reg GLU_SUERO sexo_m edad_m diabetes_m hta_m indice1_m		
+
+*** Figura 8 *** gamaden(shape, scale, location)
+
+* Fig 8a: Desplazamientos en la escala 
+*twoway function y=normalden(x,3,1.1), range(0 7) title("a)", position(11) size(*0.6)) legend(off) ytitle("Densidad de probabilidad") xlabel(0"0" 3"100" 6"200" 7"250" 12"400")	///
+*	|| function y=normalden(x,3,1.3), range(0 7) xtitle("", size(medium)) lp(-)  scheme(white) ylabel(,nogrid) xlabel(,nogrid)
+
+* Fig 10a: Distribucion observada 
+kdensity GLU_SUERO if diabetes==0, title("a)", position(11)  size(*1.1))  scheme(white) color(blue) addplot(kdensity GLU_SUERO if diabetes==1 & GLU_SUERO<400, color(red) lp(-) ) ///
+	legend(order(1 "Sin diagnostico DM2" 2 "Con diagnostico DM2") position(0) col(1) bplace(center) region(lstyle(none)) size(*0.9)) ylabel(,nogrid) xlabel(,nogrid) ///
+	note("")  ytitle("Densidad de probabilidad") xtitle("", size(medium)) xlabel(0"0" 100"100" 200"200" 300"300" 400"400") name(F10a,replace)
+
+graph export "$X/Figura 10a.eps", replace
+graph export "$X/Figura 10a.eps", replace
+
+* Fig 10b: Desplazamientos en locacion asimetria
+twoway function y=gammaden(9,0.5,-1,x), range(0 12) title("b)", position(11) size(*1.1)) lcolor(blue)  legend(off) ytitle("Densidad de probabilidad") xlabel(0"0" 1.5"p25" 3"p50" 5"p75" 9"300" 12"400")	///
+	|| function y=gammaden(9,0.5,0,x),  range(0 12) xtitle("", size(medium)) lcolor(red)  lp(-) name(F10b, replace) scheme(white) ylabel(,nogrid) xlabel(,nogrid) ///
+	|| pci 0.13 1.5 0 1.5, lp(-) lcolor(blue) || pci 0.13 5 0 5,lp(-) lcolor(blue) ///
+	|| pci 0.1 2.3 0 2.3, lp(-) lcolor(red)  || pci 0.115 6.2 0 6.2, lp(-) lcolor(red) 
+	*|| pci 0.28 3 0 3, lp(-###-###-) lcolor(gs5) || pci 0.28 4 0 4, lp(-###-###-) lcolor(gs5)
+
+graph export "$X/Figura 10b.eps", replace
+graph export "$X/Figura 10b.eps", replace
+	
+* Fig 10c: Desplazamientos en la escala 
+twoway function y=gammaden(9,0.5,-1,x), range(0 12) title("c)", position(11) size(*1.1)) lcolor(blue) legend(off) xlabel(0"0" 1"p25" 3"p50" 6"p75" 9"300" 12"400")	///
+	|| function y=gammaden(5,1.0,-1,x), range(0 12) xtitle("Glucosa mg/dl", size(medium)) lcolor(red) lp(-) name(F10c, replace) scheme(white) ytitle("") ylabel(,nogrid) xlabel(,nogrid) ///
+	|| pci 0.13 1.5 0 1.5, lp(-) lcolor(blue) || pci 0.13 5 0 5,lp(-) lcolor(blue) ///
+	|| pci 0.09 1 0 1, lp(-) lcolor(red) || pci 0.28 3 0 3, lp(-) lcolor(blue) || pci 0.09 6 0 6, lp(-) lcolor(red) 
+
+graph export "$X/Figura 10c.eps", replace
+graph export "$X/Figura 10c.eps", replace
+
+* Fig 10d : Cambios en la escala y la asimetria
+twoway function y=gammaden(9,0.5,-1,x), range(0 12) title("d)", position(11) size(*1.1)) lcolor(blue)  legend(off) ytitle("") xlabel(0"0" 1.5"p25" 3"p50" 5"p75" 9"300" 12"400")	///
+	|| function y=gammaden(5,1.0,0 ,x), range(0 12) xtitle("Glucosa mg/dl", size(medium)) lcolor(red)  lp(-) name(F10d, replace)  scheme(white) ylabel(,nogrid) xlabel(,nogrid) ///
+	|| pci 0.13 1.5 0 1.5, lp(-) lcolor(blue) || pci 0.28 3 0.28 3, lp(-) lcolor(blue) || pci 0.13 5 0 5, lp(-) lcolor(blue) ///
+	|| pci 0.114 2.3 0 2.3, lp(-) lcolor(red) || pci 0.28 4 0.28 4, lp(-) lcolor(red)   || pci 0.114 6.5 0 6.5, lp(-) lcolor(red) 
+	*/// | pci 0.28 3 0 3, lp(-###-###-) lcolor(gs5) || pci 0.195 4 0 4, lp(-###-###-) lcolor(gs5)
+
+graph export "$X/Figura 10d.eps", replace
+graph export "$X/Figura 10d.eps", replace
+
+graph combine F10a F10b F10c F10d , col(2) title("") xsize(10) ysize(5) iscale(1) ///
+	graphregion(margin(l=1 r=1) color(white))
+
+graph export "$X/Figura 10.eps", replace
+graph export "$X/Figura 10.png", replace
+
+***********************************************
+*** Cuadro 3: Medidas de Escala y Asimetria ***
+***********************************************
+set more  off
+capture program drop quantilmeasures
+program define quantilmeasures
+	version 13
+	syntax varlist [if][in]
+	qui centile `varlist', centile(20)
+	local p20= (r(c_1))
+	qui centile `varlist', centile(80)
+	local p80= (r(c_1))
+	* Quantile-Based Scale
+	local QSC20=(`p80'-`p20')		// for p<0.5
+	* Quantile-Based Skewness
+	qui sum `varlist',d
+	* Quantile-Based Scale
+	local QSC25=r(p75)-r(p25)		// for p<0.5
+	local QSC10=r(p90)-r(p10)		// for p<0.5
+	* Quantile-Based Skewness
+	local QSK25= (r(p75)-r(p50))/(r(p50)-r(p25)) - 1	// for p<0.5
+	local QSK20= (`p80'-r(p50))/(r(p50)-`p20') - 1	// for p<0.5
+	local QSK10= (r(p90)-r(p50))/(r(p50)-r(p10)) - 1	// for p<0.5
+	capture drop e2					// Drop e2 if it already exists
+	matrix QSK=(`QSC25', `QSC20', `QSC10',`QSK25',`QSK20',`QSK10')'
+	matrix rownames QSK = QSC25 QSC05 QSC10 QSK25 QSK20 QSK10
+	matrix colnames QSK = `varlist'
+	matrix list QSK
+end
+quantilmeasures GLU_SUERO
+
+bootstrap (location: mean=r(mean) median=r(p50))  ///
+          (scale: sd=r(sd) iqr25=(r(p75)-r(p25)) iqr10=(r(p10)-r(p90)) iqr05=(r(p95)-r(p5)) range=(r(max)-r(min)))  ///
+		  (skewness: qsk25=(((r(p75)-r(p50))/((r(p50)-r(p25)))-1)) ///
+					 qsk10=(((r(p90)-r(p50))/((r(p50)-r(p10)))-1)) ///
+					 qsk05=(((r(p95)-r(p50))/((r(p50)-r(p5)))-1))): summarize GLU_SUERO, detail
+					 
+bootstrap (location: mean=r(mean) median=r(p50))  ///
+          (scale: iqr25=(r(p75)-r(p25)) iqr10=(r(p10)-r(p90)) iqr05=(r(p95)-r(p5)))  ///
+		  (skewness: qsk25=(((r(p75)-r(p50))/((r(p50)-r(p25)))-1)) ///
+					 qsk10=(((r(p90)-r(p50))/((r(p50)-r(p10)))-1)) ///
+					 qsk05=(((r(p95)-r(p50))/((r(p50)-r(p5)))-1))): summarize GLU_SUERO, detail
+
+***********************************************
+*** Cuadro 9: Medidas de Escala y Asimetria ***
+***********************************************					 
+tabstat GLU_SUERO, stats(p5 p10 p25 p50 p75 p90 p95) by(diabetes)
+
+bysort diabetes: centile GLU_SUERO, centile(2.5 5 10 25 50 75 90 95 97.5)
+centile GLU_SUERO, centile(2.5 5 10 25 50 75 90 95 97.5)				 
+
+sqreg GLU_SUERO sexo_m edad_m diabetes_m hta_m indice1_m, q(0.25 0.5 0.75) reps(500)
+test [q50]_cons=[q75]_cons
+test [q50]diabetes=[q75]diabetes
+test [q75]diabetes=[q25]diabetes		
+bootstrap iqr=([q75]diabetes-[q25]diabetes), nodots: sqreg GLU_SUERO diabetes_m, q(0.25 0.75)
+
+bootstrap	(location:	qrm025=([q025]diabetes)		///
+						qrm05= ([q050]diabetes)		///
+						qrm10= ([q100]diabetes)		///
+						qrm25= ([q250]diabetes)		///
+						qrm50= ([q500]diabetes)		///
+						qrm75= ([q750]diabetes)		///
+						qrm90= ([q900]diabetes)		///
+						qrm95= ([q950]diabetes)		///
+						qrm975=([q975]diabetes))	///	
+			(scale:		qcs25=([q750]diabetes-[q250]diabetes)	///
+						qcs10=([q900]diabetes-[q100]diabetes)	///
+						qcs05=([q950]diabetes-[q050]diabetes)	///
+						qcs025=([q975]diabetes-[q025]diabetes)) 	///
+			(skewness:	qks25=([([q750]diabetes+[q750]_cons-[q500]diabetes-[q500]_cons)/([q750]_cons-[q500]_cons)]/     ///
+								[([q500]diabetes+[q500]_cons-[q250]diabetes-[q250]_cons)/([q500]_cons-[q250]_cons)])	///
+						qks10=([([q900]diabetes+[q900]_cons-[q500]diabetes-[q500]_cons)/([q900]_cons-[q500]_cons)]/     ///
+								[([q500]diabetes+[q500]_cons-[q100]diabetes-[q100]_cons)/([q500]_cons-[q100]_cons)])	///
+						qks05=([([q950]diabetes+[q950]_cons-[q500]diabetes-[q500]_cons)/([q950]_cons-[q500]_cons)]/     ///
+								[([q500]diabetes+[q500]_cons-[q050]diabetes-[q050]_cons)/([q500]_cons-[q050]_cons)])	///
+						qks025=([([q975]diabetes+[q975]_cons-[q500]diabetes-[q500]_cons)/([q975]_cons-[q500]_cons)]/    ///
+								[([q500]diabetes+[q500]_cons-[q025]diabetes-[q025]_cons)/([q500]_cons-[q025]_cons)])), nodots:	///
+			sqreg GLU_SUERO sexo_m edad_m diabetes_m hta_m indice1_m, q(0.025 0.05 0.10 0.25 0.50 0.75 0.90 0.95 0.975) //reps(500)
+
+
+bootstrap	(location:	qrm025=([q025]edad)		///
+						qrm05= ([q050]edad)		///
+						qrm10= ([q100]edad)		///
+						qrm25= ([q250]edad)		///
+						qrm50= ([q500]edad)		///
+						qrm75= ([q750]edad)		///
+						qrm90= ([q900]edad)		///
+						qrm95= ([q950]edad)		///
+						qrm975=([q975]edad))	///	
+			(scale:		qcs25=([q750]edad-[q250]edad)	///
+						qcs10=([q900]edad-[q100]edad)	///
+						qcs05=([q950]edad-[q050]edad)	///
+						qcs025=([q975]edad-[q025]edad)) 	///
+			(skewness:	qks25=([([q750]edad+[q750]_cons-[q500]edad-[q500]_cons)/([q750]_cons-[q500]_cons)]/     ///
+								[([q500]edad+[q500]_cons-[q250]edad-[q250]_cons)/([q500]_cons-[q250]_cons)])	///
+						qks10=([([q900]edad+[q900]_cons-[q500]edad-[q500]_cons)/([q900]_cons-[q500]_cons)]/     ///
+								[([q500]edad+[q500]_cons-[q100]edad-[q100]_cons)/([q500]_cons-[q100]_cons)])	///
+						qks05=([([q950]edad+[q950]_cons-[q500]edad-[q500]_cons)/([q950]_cons-[q500]_cons)]/     ///
+								[([q500]edad+[q500]_cons-[q050]edad-[q050]_cons)/([q500]_cons-[q050]_cons)])	///
+						qks025=([([q975]edad+[q975]_cons-[q500]edad-[q500]_cons)/([q975]_cons-[q500]_cons)]/    ///
+								[([q500]edad+[q500]_cons-[q025]edad-[q025]_cons)/([q500]_cons-[q025]_cons)])), nodots:	///
+			sqreg GLU_SUERO sexo_m diabetes_m edad_m hta_m indice1_m, q(0.025 0.05 0.10 0.25 0.50 0.75 0.90 0.95 0.975) reps(500)
+				
+di ([(123.5+119.98)-(52.01+100.14)])/((119.98-  100.14))
+di ([(52.01+100.14)-(25.34+ 89.0)])/((100.14- 89.0))
+di ([(123.5+119.98)-(52.01+100.14)]/(119.98-  100.14)) /  ([(52.01+100.14)-(25.34+ 89.0)]/(100.14- 89.0))
+
+di ([(198.13+157.73)-(52.01+100.14)])/((157.73-  100.14))
+di ([(52.01+100.14)-(-2.12+74.3)])/((100.14- 74.3))
+di ([(198.13+157.73)-(52.01+100.14)]/(157.73-  100.14)) / ([(52.01+100.14)-(-2.12+74.3)]/(100.14- 74.3))
+
+di ([(183.27+141.60)-(52.01+100.14)])/((141.60-  100.14))
+di ([(52.01+100.14)-(5.58+ 80.07)])/((100.14- 80.07))
+di ([(183.27+141.60)-(52.01+100.14)]/(141.60-  100.14)) / ([(52.01+100.14)-(5.58+ 80.07)]/(100.14- 80.07))
+							
+
