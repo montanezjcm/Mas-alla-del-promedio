@@ -25,8 +25,6 @@ keep if _merge==3
 drop _merge
 
 merge 1:1 FOLIO_I FOLIO_INT  using "$Y/tomas_de_sangre_w8.dta"
-*keep if _merge==3
-*drop _merge
 
 ** DIAGNOSTICO PREVIO DE DIABETES ** 
 svyset upm [pweight=ponde_f], strata(est_sel ) vce(linearized) singleunit(certainty)     //  https://doi.org/10.21149/13774
@@ -63,9 +61,11 @@ tab a0301 [iw=ponde_suero_2] if 7<san04 & _merge==3 &  a0808!=1 &  a0301!=2  & G
 
 ***************************************************************************************************
 *** Filtro: Nos quedamos solo con la muestra analitica: 1359 individuos con medición de glucosa ***
+***** Solo variables de interes: FOLIO_I FOLIO_INT  GLU_SUERO  sexo edad diabetes hta indice1 *****
 ***************************************************************************************************
-keep if 7<san04 & _merge==3 &  a0808!=1 &  a0301!=2  & GLU_SUERO!=.
-save "$X/GLU_SUERO.dta", clear
+	keep if 7<san04 & _merge==3 &  a0808!=1 &  a0301!=2  & GLU_SUERO!=.
+	keep FOLIO_I FOLIO_INT  GLU_SUERO  sexo edad diabetes hta indice1
+	save "$X/GLU_SUERO.dta", replace
 **************************************************************************************
 ******************	A PARTIR DE AQUI LA SINTAXIS SE PUEDE EJECTUTAR ******************
 **** Cuadro 1 ****  CON LA BASE DE DATOS COMPARTIDA EN ESTE GITHUB  ******************
