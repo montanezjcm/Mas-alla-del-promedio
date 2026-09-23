@@ -65,22 +65,19 @@ tab a0301 [iw=ponde_suero_2] if 7<san04 & _merge==3 &  a0808!=1 &  a0301!=2  & G
 *** Filtro: Nos quedamos solo con la muestra analitica: 1359 individuos con medición de glucosa ***
 ***************************************************************************************************
 keep if 7<san04 & _merge==3 &  a0808!=1 &  a0301!=2  & GLU_SUERO!=.
+save "$X/GLU_SUERO.dta", clear
+**************************************************************************************
+******************	A PARTIR DE AQUI LA SINTAXIS SE PUEDE EJECTUTAR ******************
+**** Cuadro 1 ****  CON LA BASE DE DATOS COMPARTIDA EN ESTE GITHUB  ******************
+******************             CON NOMBRE "GLU_SUERO.dta"           ******************
+**************************************************************************************
 
-** Descriptivas **
-sum GLU_SUERO ,d
-scalar p25=r(p25)
-scalar p50=r(p50)
-scalar p75=r(p75)
-******************
-**** Cuadro 1 ****
-******************
+* use "$X/GLU_SUERO.dta", clear
 tabstat GLU_SUERO, stats(n mean sd p10 p25 p50 p75, p90 sk ) by(diabetes)
 
 
-
-set more off
 *********************************************************** 
-************ Figura 1: Histograma, y Grafica de Caja y Bigote ***********
+***** Figura 1: Histograma, y Grafica de Caja y Bigote ****
 ***********************************************************
 bysort diabetes: sum GLU_SUERO ,d
 histogram GLU_SUERO, fcolor(blue) normal  normopts(lcolor(red) lp(-)) title("a) Histograma", position(11) size(*1.1)) bin(50) scheme(white) ///
@@ -116,6 +113,7 @@ graph export "$X/Figura 1.eps", replace
 suero entre personas sin y con diagnóstico previo de diabetes. 
 México, ENSANUT 2023. **
 ***********************************************************/
+
 ** Figura 2a **
 kdensity GLU_SUERO if diabetes==0, scheme(white) color(blue) lp(-_-) note("") title("a) Gráfico de la función de densidad kernel", position(11) size(*1.1)) ytitle("Densidad") xtitle("Glucosa mg/dl") legend(off) ///
 	text(0.004 200 "----- Valores observados en personas con diabetes", color(red) placement(e) size(small)) ylab(,nogrid) xlab(,nogrid) ///
